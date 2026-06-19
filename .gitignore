@@ -1,0 +1,46 @@
+# === Django & Python ===
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+mess_mate_venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.celerybeat-schedule
+
+# === Database (PostgreSQL) ===
+# Never commit raw database files, backups, or dumps
+db.sqlite3   
+*.sql
+*.dump
+*.dump.gz
+
+
+# === Secrets & Environment Configs ===
+# CRITICAL: Keep your database credentials out of GitHub
+.env
+.env.*
+! .env.example
+local_settings.py
+
+# === Media & Static Uploads ===
+# Ignore user-uploaded files (profile pictures, etc.)
+/media/
+/static_root/
+
+# === IDEs and Editors ===
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# === OS Files ===
+.DS_Store
+Thumbs.db
