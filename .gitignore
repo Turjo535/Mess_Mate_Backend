@@ -11,6 +11,7 @@ mess_mate_venv/
 pip-log.txt
 pip-delete-this-directory.txt
 .celerybeat-schedule
+test_auth.py
 
 # === Database (PostgreSQL) ===
 # Never commit raw database files, backups, or dumps
@@ -18,7 +19,7 @@ db.sqlite3
 *.sql
 *.dump
 *.dump.gz
-
+messmate-18bcc-firebase-adminsdk-fbsvc-072a86389c.json
 
 # === Secrets & Environment Configs ===
 # CRITICAL: Keep your database credentials out of GitHub
