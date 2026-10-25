@@ -172,7 +172,13 @@ class UserInfoView(APIView):
         else:
             data['profile_picture'] = None
 
-        return Response(data, status=status.HTTP_200_OK)
+        chk=False
+        if user.phone and user.permanent_address and user.date_of_birth and user.profession and user.institution:
+            chk=True
+
+        print("chk",chk)
+
+        return Response({"data": data, "chk": chk}, status=status.HTTP_200_OK)
         return Response({'error': 'Authentication credentials were not provided or are invalid.'}, status=status.HTTP_401_UNAUTHORIZED)
 
 
