@@ -127,6 +127,7 @@ class SignInView(APIView):
     def post(self, request):
         email = request.data.get('email')
         password = request.data.get('password')
+        # print("email",email,"password",password)
         if not email or not password:
             return Response({'error': 'Email and password are required.'}, status=status.HTTP_400_BAD_REQUEST)
         try:

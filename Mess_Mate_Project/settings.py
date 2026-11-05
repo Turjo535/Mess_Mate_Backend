@@ -15,10 +15,11 @@ from datetime import timedelta
 import firebase_admin
 from firebase_admin import credentials
 from environs import Env
+import os
 
 env = Env()              
 env.read_env()
-
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -49,10 +50,19 @@ INSTALLED_APPS = [
     'corsheaders',
     'drf_spectacular',
     "rest_framework",
+    'django_celery_results',
 
     # Local Apps
     'User_Authentication',
+    'Mess_Management',
 ]
+
+# Redis as broker
+CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND = 'django-db'    # result DB তে store হবে
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Asia/Dhaka'
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
