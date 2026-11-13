@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     # Local Apps
     'User_Authentication',
     'Mess_Management',
+    'Meal_Tracking',
 ]
 
 # Redis as broker
@@ -116,6 +117,7 @@ DATABASES = {
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+
 AUTH_USER_MODEL = 'User_Authentication.UserModel'
 # Firebase Admin SDK Initialization
 cred = credentials.Certificate(env('FIREBASE_ACCOUNT_KEY'))
@@ -154,7 +156,7 @@ REST_FRAMEWORK = {
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Dhaka'
 
 USE_I18N = True
 
@@ -180,8 +182,8 @@ SPECTACULAR_SETTINGS = {
 
 SIMPLE_JWT = {
     
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=50),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    "ACCESS_TOKEN_LIFETIME": timedelta(days=7),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=10),
     "AUTH_HEADER_TYPES": ("Bearer",),
     "AUTH_HEADER_NAME": "HTTP_AUTHORIZATION",
     
