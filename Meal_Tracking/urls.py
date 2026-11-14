@@ -14,4 +14,6 @@ urlpatterns = [
     path('<int:mess_id>/meal-off/<int:pk>/', v.MealOffDeleteView.as_view()),
     path('<int:mess_id>/members/', v.MessMemberListView.as_view()),
     path('<int:mess_id>/members/<int:member_id>/meals/', v.MemberMealReportView.as_view()),
+    path('<int:mess_id>/members/<int:member_id>/meals/off/', v.MemberPastOffView.as_view()),
+    path('<int:mess_id>/members/<int:member_id>/meals/restore/', v.MemberPastRestoreView.as_view()),
 ]

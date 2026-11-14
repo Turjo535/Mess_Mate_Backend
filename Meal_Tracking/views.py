@@ -15,12 +15,15 @@ from Mess_Management.permissions import IsMessManager, IsMessMember
 from .models import MealBreak, MealOff, MealSchedule
 from django.db.models import ProtectedError, Q
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from .serializers import (MealBreakSerializer, MealOffSerializer, MealScheduleSerializer,
-                          MealsDaySerializer, MemberBriefSerializer, MemberMealReportSerializer,
-                          OverlapSerializer, ReportQuerySerializer, ResumeSerializer)
+from .serializers import (
+    MealBreakSerializer, MealOffSerializer, MealScheduleSerializer,
+    MealsDaySerializer, MemberBriefSerializer, MemberMealReportSerializer,
+    OverlapSerializer, PastRangeSerializer, PastRestoreSerializer,
+    ReportQuerySerializer, ResumeSerializer
+)
 from .services import (bounds, carve, check_time_limit, eating_map, find_overlaps,
                        member_meal_report, mess_meals, notify_meal_off, notify_range,
-                       validated_bounds)
+                       validated_bounds,make_range,notify_member,label)
 
 TAG = 'Meal Tracking'
 WRITE = ('POST', 'PATCH', 'DELETE')
@@ -242,3 +245,51 @@ class MessMemberListView(MemberView):
         rows = Mess_Members.objects.filter(mess_id=mess_id).select_related('member').order_by('member__name')
         return Response([{'id': r.id, 'name': getattr(r.member, 'name', None) or r.member.email,
                           'is_manager': r.is_manager} for r in rows])
+
+def member_in_mess(mess_id, member_id):
+    return get_object_or_404(Mess_Members.objects.select_related('member', 'mess'),
+                             pk=member_id, mess_id=mess_id)
+
+
+class MemberPastOffView(APIView):
+    permission_classes = [IsAuthenticated, IsMessManager]
+
+    @extend_schema(tags=[TAG], request=PastRangeSerializer,
+                   responses={201: OpenApiTypes.OBJECT, 409: OverlapSerializer})
+    def post(self, request, mess_id, member_id):
+        target = member_in_mess(mess_id, member_id)
+        s = PastRangeSerializer(data=request.data, context={'mess_id': mess_id})
+        s.is_valid(raise_exception=True)
+        v = s.validated_data
+        start, end, meals = v['_start'], v['_end'], v['_meals']
+
+        overlaps = find_overlaps(start, end, MealBreak.objects.filter(member=target), meals)
+        if overlaps:
+            return Response({'detail': 'Overlaps with an existing break of this member.',
+                             'overlaps': overlaps}, status=status.HTTP_409_CONFLICT)
+
+        brk = make_range(MealBreak, start, end, meals,
+                         member=target, reason=v['reason'], by_manager=True)
+        notify_member(target, 'meal_marked_off', start, end, meals, v['reason'])
+        return Response({'id': brk.id, 'from': label(start, meals), 'to': label(end, meals)},
+                        status=status.HTTP_201_CREATED)
+
+
+class MemberPastRestoreView(APIView):
+    permission_classes = [IsAuthenticated, IsMessManager]
+
+    @extend_schema(tags=[TAG], request=PastRestoreSerializer, responses={200: OpenApiTypes.OBJECT})
+    def post(self, request, mess_id, member_id):
+        target = member_in_mess(mess_id, member_id)
+        s = PastRestoreSerializer(data=request.data, context={'mess_id': mess_id})
+        s.is_valid(raise_exception=True)
+        v = s.validated_data
+        start, end, meals = v['_start'], v['_end'], v['_meals']
+
+        removed = carve(MealBreak.objects.filter(member=target), start, end, meals,
+                        ('member', 'reason', 'by_manager'))
+        if not removed:
+            raise ValidationError('No break found in this period.')
+        notify_member(target, 'meal_restored', start, end, meals, v.get('reason', ''))
+        return Response({'detail': 'Updated.', 'restored': [
+            {'from': label(lo, meals), 'to': label(hi, meals)} for lo, hi in removed]})
