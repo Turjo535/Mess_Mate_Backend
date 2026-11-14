@@ -16,8 +16,8 @@ class MealScheduleAdmin(admin.ModelAdmin):
 
 @admin.register(MealBreak)
 class MealBreakAdmin(admin.ModelAdmin):
-    list_display = ('id','member','start_date', 'end_date','start_meal','end_meal', 'reason', 'created_at')
-    list_filter = ('member', 'created_at')
+    list_display = ('id','member','by_manager', 'start_date', 'end_date','start_meal','end_meal', 'reason', 'created_at')
+    list_filter = ('member', 'by_manager', 'created_at')
     search_fields = ('member__user__username', 'reason')
 
 @admin.register(MealOff)

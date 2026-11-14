@@ -1,7 +1,8 @@
 from django.utils import timezone
+from datetime import timedelta
 from rest_framework import serializers
 from .models import MealBreak, MealOff, MealSchedule
-from .services import check_time_limit, make_bounds, mess_meals, validated_bounds
+from .services import MAX_BACK_DAYS, last_started,  check_time_limit, make_bounds, mess_meals, validated_bounds
 
 
 class MealScheduleSerializer(serializers.ModelSerializer):
@@ -168,3 +169,36 @@ class MealsDaySerializer(serializers.Serializer):
 class OverlapSerializer(serializers.Serializer):
     detail = serializers.CharField()
     overlaps = serializers.ListField(child=serializers.DictField())
+
+class PastRangeSerializer(serializers.Serializer):
+    start_date = serializers.DateField()
+    start_meal = serializers.PrimaryKeyRelatedField(
+        queryset=MealSchedule.objects.all(), required=False, allow_null=True)
+    end_date = serializers.DateField(required=False)       # না দিলে এক দিন
+    end_meal = serializers.PrimaryKeyRelatedField(
+        queryset=MealSchedule.objects.all(), required=False, allow_null=True)
+    reason = serializers.CharField(max_length=100)
+
+    def validate(self, attrs):
+        mess_id = self.context['mess_id']
+        sm, em = attrs.get('start_meal'), attrs.get('end_meal')
+        if any(m and m.mess_id != mess_id for m in (sm, em)):
+            raise serializers.ValidationError("Meal does not belong to this mess.")
+        meals = mess_meals(mess_id)
+        if not meals:
+            raise serializers.ValidationError("Create meal schedules first.")
+        attrs['end_date'] = attrs.get('end_date') or attrs['start_date']
+
+        start, end = validated_bounds(attrs, meals)
+        if end < start:
+            raise serializers.ValidationError("End is before start.")
+        if end > last_started(meals):
+            raise serializers.ValidationError("Only meals that have already started can be changed.")
+        if start[0] < timezone.localdate() - timedelta(days=MAX_BACK_DAYS):
+            raise serializers.ValidationError(f"Cannot go back more than {MAX_BACK_DAYS} days.")
+        attrs['_start'], attrs['_end'], attrs['_meals'] = start, end, meals
+        return attrs
+
+
+class PastRestoreSerializer(PastRangeSerializer):
+    reason = serializers.CharField(max_length=100, required=False, allow_blank=True)

@@ -9,7 +9,23 @@ from .models import MealBreak, MealOff, MealSchedule
 
 INF = (date.max, 0)
 
+MAX_BACK_DAYS = 93
 
+
+def last_started(meals):
+    """সবচেয়ে সাম্প্রতিক শুরু হয়ে যাওয়া বেলার অবস্থান।"""
+    today, now = timezone.localdate(), timezone.localtime().time()
+    started = [i for i, m in enumerate(meals) if m.meal_time and m.meal_time <= now]
+    if started:
+        return (today, started[-1])
+    return (today - timedelta(days=1), len(meals) - 1)
+
+
+def notify_member(member, type_, start, end, meals, reason=''):
+    Notification.objects.create(user_id=member.member_id, type=type_, payload={
+        'mess_id': member.mess_id, 'mess_name': member.mess.name, 'reason': reason,
+        'from': label(start, meals), 'to': label(end, meals)})
+    
 # ------------------------------------------------ অবস্থান (তারিখ, বেলার ক্রম)
 def mess_meals(mess_id):
     return list(MealSchedule.objects.filter(mess_id=mess_id).order_by('meal_time', 'id'))
@@ -21,7 +37,7 @@ def make_bounds(start_date, start_meal_id, end_date, end_meal_id, meals):
     end = None
     if end_date:
         end = (end_date, index[end_meal_id] if end_meal_id else len(meals) - 1)
-    return start, end                      # end None = চলতে থাকবে
+    return start, end                      
 
 
 def bounds(r, meals):
@@ -30,6 +46,8 @@ def bounds(r, meals):
 
 def validated_bounds(v, meals):
     sm, em = v.get('start_meal'), v.get('end_meal')
+    print("validated_bounds",sm,em,v['start_date'], sm.id if sm else None,
+                       v.get('end_date'), em.id if em else None, meals, flush=True)
     return make_bounds(v['start_date'], sm.id if sm else None,
                        v.get('end_date'), em.id if em else None, meals)
 
