@@ -16,5 +16,8 @@ urlpatterns = [
 
     # Mess Utilities
     path('<int:mess_id>/mess-utilities/', V.MessUtilitiesViewSet.as_view(), name='mess-utilities'),
-    path('<int:mess_id>/mess-utilities/<int:pk>/', V.UpdateMessUtilitiesView.as_view(), name='update-mess-utilities')
+    path('<int:mess_id>/mess-utilities/<int:pk>/', V.UpdateMessUtilitiesView.as_view(), name='update-mess-utilities'),
+
+    #financial summary
+    path('<int:mess_id>/financial-summary/<int:cycle_id>/', V.MessCycleFinancialSummaryView.as_view(), name='financial-summary'),
 ]

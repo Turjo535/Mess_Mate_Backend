@@ -11,8 +11,10 @@ from rest_framework.views import APIView
 from Mess_Management.models import Mess, Mess_Members
 from Mess_Management.permissions import IsMessManager, IsMessMember
 from .permission import IsMessCycleActive
+from .services import cycle_meal_summary, cycle_financial_summary
 from .models import MemberDeposit, MessBazar, MessUtilities, MessCycle
 from Meal_Tracking.models import MealSchedule, MealBreak, MealOff
+# from Meal_Tracking.services import mess_meals, bounds, covers, make_bounds, validated_bounds, check_time_limit, last_started, member_meal_report
 from .serializers import (
     MemberDepositCreateGetSerializer,
     CreateMessCycleSerializer,
@@ -391,7 +393,7 @@ class UpdateMessUtilitiesView(APIView):
 
 
 class MessCycleFinancialSummaryView(APIView):
-    permission_classes = [IsAuthenticated, IsMessMember, IsMessCycleActive]
+    permission_classes = [IsAuthenticated, IsMessMember]
 
     @extend_schema(
         tags=[TAG],
@@ -406,9 +408,9 @@ class MessCycleFinancialSummaryView(APIView):
             404: OpenApiTypes.OBJECT,
         },
     )
-    def get(self, request, mess_id=None):
+    def get(self, request, mess_id=None, cycle_id=None):
         mess_id = mess_id or request.query_params.get('mess_id')
-        cycle_id = request.query_params.get('cycle_id')
+        cycle_id = cycle_id or request.query_params.get('cycle_id')
 
         if not mess_id or not cycle_id:
             return Response({'error': 'Both mess_id and cycle_id are required.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -416,16 +418,7 @@ class MessCycleFinancialSummaryView(APIView):
         mess = get_object_or_404(Mess, pk=mess_id)
         cycle = get_object_or_404(MessCycle, pk=cycle_id, mess=mess)
 
-        # Calculate financial summary
-        total_deposits = MemberDeposit.objects.filter(member__mess=mess).aggregate(total=models.Sum('amount'))['total'] or 0
-        total_bazar = MessBazar.objects.filter(mess=mess).aggregate(total=models.Sum('amount'))['total'] or 0
-        total_utilities = MessUtilities.objects.filter(mess=mess).aggregate(total=models.Sum('amount'))['total'] or 0
+        meals = cycle_meal_summary(mess, cycle)
+        fin   = cycle_financial_summary(mess, cycle, total_meals_eaten=meals['overall_eaten'])
 
-        summary = {
-            'total_deposits': total_deposits,
-            'total_bazar': total_bazar,
-            'total_utilities': total_utilities,
-            'net_balance': total_deposits - (total_bazar + total_utilities),
-        }
-
-        return Response(summary, status=status.HTTP_200_OK)
+        return Response({**fin, 'meal_summary': meals}, status=status.HTTP_200_OK)
