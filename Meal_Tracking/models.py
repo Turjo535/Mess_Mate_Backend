@@ -1,6 +1,7 @@
 from django.db import models
 from Mess_Management.models import Mess,Mess_Members
 from User_Authentication.models import UserModel
+from Financial_Management.models import MessCycle
 from django.db.models import F, Q
 # Create your models here.
 class MealSchedule(models.Model):
@@ -27,6 +28,7 @@ class MealRange(models.Model):
 
 class MealBreak(MealRange):
     member = models.ForeignKey(Mess_Members, on_delete=models.CASCADE, related_name='meal_breaks')
+    
     reason = models.CharField(max_length=100, blank=True)
     by_manager = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
