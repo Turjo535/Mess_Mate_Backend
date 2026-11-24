@@ -177,6 +177,34 @@ class InvitationLookupView(APIView):
             'expires_at': invitation.expires_at,
         })
 
+class SwitchMessManagerView(APIView):
+    permission_classes = [IsAuthenticated, IsMessManager]
+
+    @extend_schema(
+        tags=[TAG],
+        request=inline_serializer(
+            name='SwitchMessManagerRequest',
+            fields={'new_manager_id': serializers.IntegerField()}
+        ),
+        responses={200: OpenApiResponse(description='Manager switched successfully'),
+                   400: OpenApiResponse(description='Invalid request'),
+                   404: OpenApiResponse(description='Mess or member not found')},
+    )
+    def post(self, request, mess_id):
+        new_manager_id = request.data.get('new_manager_id')
+        if not new_manager_id:
+            return Response({'error': 'new_manager_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        mess = get_object_or_404(Mess, pk=mess_id)
+        new_manager_member = get_object_or_404(Mess_Members, mess=mess, member_id=new_manager_id)
+
+        # Switch roles
+        current_managers = Mess_Members.objects.filter(mess=mess, is_manager=True)
+        current_managers.update(is_manager=False)
+        new_manager_member.is_manager = True
+        new_manager_member.save()
+
+        return Response({'message': 'Manager switched successfully.'}, status=status.HTTP_200_OK)
 
 # ---------------------------------------------------------------- Notifications
 @extend_schema(tags=[TAG])
