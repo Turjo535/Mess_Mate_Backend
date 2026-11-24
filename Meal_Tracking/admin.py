@@ -8,16 +8,11 @@ class MealScheduleAdmin(admin.ModelAdmin):
     list_filter = ('mess', 'meal_type')
     search_fields = ('mess__name', 'meal_type')
 
-# @admin.register(MealRange)
-# class MealRangeAdmin(admin.ModelAdmin):
-#     list_display = ('id','start_date', 'end_date', 'start_meal', 'end_meal')
-#     list_filter = ('start_date', 'end_date')
-#     search_fields = ('start_meal__meal_type', 'end_meal__meal_type')
 
 @admin.register(MealBreak)
 class MealBreakAdmin(admin.ModelAdmin):
-    list_display = ('id','member','by_manager', 'start_date', 'end_date','start_meal','end_meal', 'reason', 'created_at')
-    list_filter = ('member', 'by_manager', 'created_at')
+    list_display = ('id','member', 'by_manager', 'start_date', 'end_date','start_meal','end_meal', 'reason', 'created_at')
+    list_filter = ('member',  'by_manager', 'created_at')
     search_fields = ('member__user__username', 'reason')
 
 @admin.register(MealOff)

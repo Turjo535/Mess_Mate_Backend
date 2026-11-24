@@ -69,7 +69,7 @@ class MealOffSerializer(RangeSerializer):
 
 
 class ResumeSerializer(serializers.Serializer):
-    """'এই সময় থেকে আবার খাব।' to_date না দিলে বিরতির শেষ পর্যন্ত, দিলে শুধু সেই পরিসীমা।"""
+    
     from_date = serializers.DateField()
     from_meal = serializers.PrimaryKeyRelatedField(
         queryset=MealSchedule.objects.all(), required=False, allow_null=True)
@@ -79,6 +79,7 @@ class ResumeSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         mess_id = self.context['mess_id']
+        
         fm, tm, td = attrs.get('from_meal'), attrs.get('to_meal'), attrs.get('to_date')
         if any(m and m.mess_id != mess_id for m in (fm, tm)):
             raise serializers.ValidationError("Meal does not belong to this mess.")

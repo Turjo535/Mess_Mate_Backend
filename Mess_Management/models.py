@@ -3,8 +3,10 @@ from User_Authentication.models import UserModel
 from datetime import timedelta
 from django.utils import timezone
 # Create your models here.
+INVITE_TTL = timedelta(hours=72)
+
 def get_expiry():
-    return timezone.now() + timedelta(hours=72)
+    return timezone.now() + INVITE_TTL
 
 class Mess(models.Model):
     name = models.CharField(max_length=100)

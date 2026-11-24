@@ -10,6 +10,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from Financial_Management.models import MessCycle
 from Mess_Management.models import Mess, Mess_Members
 from Mess_Management.permissions import IsMessManager, IsMessMember
 from .models import MealBreak, MealOff, MealSchedule
@@ -117,7 +118,7 @@ class MealDayView(MemberView):
 # ---------------------------------------------------------------- Member-এর বিরতি
 class MealBreakListCreateView(MemberView):
     @extend_schema(tags=[TAG], responses={200: MealBreakSerializer(many=True)})
-    def get(self, request, mess_id):
+    def get(self, request, mess_id,cycle_id):
         breaks = (own_breaks(request, mess_id)
                   .filter(Q(end_date__isnull=True) | Q(end_date__gte=timezone.localdate()))
                   .order_by('start_date'))
@@ -125,7 +126,7 @@ class MealBreakListCreateView(MemberView):
 
     @extend_schema(tags=[TAG], request=MealBreakSerializer,
                    responses={201: MealBreakSerializer, 409: OverlapSerializer})
-    def post(self, request, mess_id):
+    def post(self, request, mess_id,cycle_id):
         member = get_member(request, mess_id)
         s = MealBreakSerializer(data=request.data, context={'mess_id': mess_id})
         s.is_valid(raise_exception=True)

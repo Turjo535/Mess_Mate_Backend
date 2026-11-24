@@ -19,7 +19,6 @@ import os
 
 env = Env()              
 env.read_env()
-CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -56,10 +55,11 @@ INSTALLED_APPS = [
     'User_Authentication',
     'Mess_Management',
     'Meal_Tracking',
+    'Financial_Management',
 ]
 
 # Redis as broker
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = 'django-db'    # result DB তে store হবে
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
@@ -173,6 +173,7 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'Backend API system for Mess Mate application integration.',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
 }
 # JwT Authentication Settings
 
@@ -200,4 +201,7 @@ EMAIL_PORT = 587
 EMAIL_HOST_USER = env('EMAIL_USER')
 EMAIL_HOST_PASSWORD = env('EMAIL_PASSWORD')
 EMAIL_FROM = env('EMAIL_FROM')
+DEFAULT_FROM_EMAIL = EMAIL_FROM
 EMAIL_USE_TLS = True
+
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:5173')
