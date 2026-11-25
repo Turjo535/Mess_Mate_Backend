@@ -118,7 +118,7 @@ class MealDayView(MemberView):
 # ---------------------------------------------------------------- Member-এর বিরতি
 class MealBreakListCreateView(MemberView):
     @extend_schema(tags=[TAG], responses={200: MealBreakSerializer(many=True)})
-    def get(self, request, mess_id,cycle_id):
+    def get(self, request, mess_id):
         breaks = (own_breaks(request, mess_id)
                   .filter(Q(end_date__isnull=True) | Q(end_date__gte=timezone.localdate()))
                   .order_by('start_date'))
@@ -126,7 +126,7 @@ class MealBreakListCreateView(MemberView):
 
     @extend_schema(tags=[TAG], request=MealBreakSerializer,
                    responses={201: MealBreakSerializer, 409: OverlapSerializer})
-    def post(self, request, mess_id,cycle_id):
+    def post(self, request, mess_id):
         member = get_member(request, mess_id)
         s = MealBreakSerializer(data=request.data, context={'mess_id': mess_id})
         s.is_valid(raise_exception=True)
@@ -137,6 +137,9 @@ class MealBreakListCreateView(MemberView):
             return Response({'detail': 'Overlaps with your existing break.', 'overlaps': overlaps},
                             status=status.HTTP_409_CONFLICT)
         s.save(member=member)
+        # Notify the manager(s) that this member has taken a break
+        notify_member(member, 'meal_break_added', start, end, meals,
+                      s.validated_data.get('reason', ''))
         return Response(s.data, status=status.HTTP_201_CREATED)
 
 
@@ -161,6 +164,9 @@ class MealBreakResumeView(MemberView):
                         v['_meals'], ('member', 'reason'))
         if not removed:
             raise ValidationError('No break found in this period.')
+        # Notify manager that this member has resumed eating
+        for lo, hi in removed:
+            notify_member(member, 'meal_break_resumed', lo, hi, v['_meals'])
         return Response({'detail': 'Updated.'})
 
 

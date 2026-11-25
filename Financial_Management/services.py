@@ -7,6 +7,39 @@ from .models import MessCycle, MemberDeposit, MessBazar, MessUtilities
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Notification helper
+# ──────────────────────────────────────────────────────────────────────────────
+
+def notify_mess(mess, by_user, type_, payload):
+    """
+    Send a notification to every member of a mess except the actor (by_user).
+
+    Args:
+        mess     : Mess instance
+        by_user  : UserModel instance — the person who triggered the action
+        type_    : str notification type, e.g. 'deposit_added', 'bazar_deleted'
+        payload  : dict — extra context shown in the notification
+
+    Notification types used in Financial Management:
+        MessCycle   : 'cycle_created'  / 'cycle_updated'
+        MemberDeposit: 'deposit_added' / 'deposit_updated' / 'deposit_deleted'
+        MessBazar   : 'bazar_added'    / 'bazar_updated'   / 'bazar_deleted'
+        MessUtilities:'utility_added'  / 'utility_updated' / 'utility_deleted'
+    """
+    from Mess_Management.models import Mess_Members, Notification
+
+    user_ids = (
+        Mess_Members.objects
+        .filter(mess=mess)
+        .exclude(member=by_user)
+        .values_list('member_id', flat=True)
+    )
+    base = {'mess_id': mess.id, 'mess_name': mess.name, **payload}
+    Notification.objects.bulk_create(
+        [Notification(user_id=uid, type=type_, payload=base) for uid in user_ids]
+    )
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Cycle conflict helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
