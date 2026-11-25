@@ -11,15 +11,15 @@ from rest_framework.views import APIView
 
 # Local imports
 from User_Authentication.models import UserModel
-from .models import Mess, MessInvitation, Notification
-from .permissions import IsMessManager, IsVerifiedUser
+from .models import Mess,Mess_Members, MessInvitation, Notification
+from .permissions import IsMessManager, IsMessMember, IsVerifiedUser
 from .serializers import (
     AddMessMemberSerializer, BulkInviteResponseSerializer, BulkInviteSerializer,
     CreateMessSerializer, DetailSerializer, InvitationLookupSerializer,
     InvitationRespondResponseSerializer, InvitationRespondSerializer, InvitationSerializer,
     NotificationListSerializer, NotificationReadSerializer, NotificationSerializer,
     SentInvitationSerializer)
-from .services import create_invitations, respond_to_invitation
+from .services import create_invitations, leave_mess, respond_to_invitation
 
 TAG = 'Mess Management'
 
@@ -191,20 +191,43 @@ class SwitchMessManagerView(APIView):
                    404: OpenApiResponse(description='Mess or member not found')},
     )
     def post(self, request, mess_id):
+        
         new_manager_id = request.data.get('new_manager_id')
+        # print(f"Received new_manager_id: {new_manager_id}",flush=True)  # Debugging line
         if not new_manager_id:
             return Response({'error': 'new_manager_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         mess = get_object_or_404(Mess, pk=mess_id)
-        new_manager_member = get_object_or_404(Mess_Members, mess=mess, member_id=new_manager_id)
-
+        
+        new_manager_member = get_object_or_404(Mess_Members, mess=mess, member=new_manager_id)
+        print(new_manager_member,flush=True)  # Debugging line
         # Switch roles
         current_managers = Mess_Members.objects.filter(mess=mess, is_manager=True)
+
         current_managers.update(is_manager=False)
         new_manager_member.is_manager = True
         new_manager_member.save()
 
         return Response({'message': 'Manager switched successfully.'}, status=status.HTTP_200_OK)
+
+
+class LeaveMessView(APIView):
+    permission_classes = [IsAuthenticated, IsMessMember]
+
+    @extend_schema(
+        tags=[TAG],
+        summary="Leave a mess",
+        responses={
+            200: DetailSerializer,
+            400: DetailSerializer,
+            403: DetailSerializer,
+            404: DetailSerializer,
+        },
+    )
+    def post(self, request, mess_id):
+        mess = get_object_or_404(Mess, pk=mess_id)
+        leave_mess(mess, request.user)
+        return Response({'detail': 'You have left the mess.'}, status=status.HTTP_200_OK)
 
 # ---------------------------------------------------------------- Notifications
 @extend_schema(tags=[TAG])

@@ -1,4 +1,4 @@
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
@@ -11,10 +11,8 @@ from rest_framework.views import APIView
 from Mess_Management.models import Mess, Mess_Members
 from Mess_Management.permissions import IsMessManager, IsMessMember
 from .permission import IsMessCycleActive
-from .services import cycle_meal_summary, cycle_financial_summary
+from .services import cycle_meal_summary, cycle_financial_summary, notify_mess
 from .models import MemberDeposit, MessBazar, MessUtilities, MessCycle
-from Meal_Tracking.models import MealSchedule, MealBreak, MealOff
-# from Meal_Tracking.services import mess_meals, bounds, covers, make_bounds, validated_bounds, check_time_limit, last_started, member_meal_report
 from .serializers import (
     MemberDepositCreateGetSerializer,
     CreateMessCycleSerializer,
@@ -24,7 +22,6 @@ from .serializers import (
 
 # Create your views here.
 TAG = 'Financial Management'
-WRITE = ('POST', 'PATCH', 'DELETE')
 
 
 # =====================================================================
@@ -73,10 +70,16 @@ class CreateMessCycleView(APIView):
             return Response({'error': 'mess_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         mess = get_object_or_404(Mess, pk=mess_id)
-
         serializer = CreateMessCycleSerializer(data=request.data, context={'mess': mess})
         if serializer.is_valid():
-            serializer.save(mess=mess)
+            cycle = serializer.save(mess=mess)
+            notify_mess(mess, request.user, 'cycle_created', {
+                'cycle_id': cycle.id,
+                'cycle_name': cycle.name,
+                'start_date': str(cycle.start_date),
+                'end_date': str(cycle.end_date),
+                'by': request.user.email,
+            })
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -102,7 +105,6 @@ class UpdateMessCycleView(APIView):
             return Response({'error': 'mess_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         mess = get_object_or_404(Mess, pk=mess_id)
-
         pk = pk or request.query_params.get('id') or (
             request.data.get('id') if hasattr(request, 'data') and isinstance(request.data, dict) else None
         )
@@ -110,10 +112,15 @@ class UpdateMessCycleView(APIView):
             return Response({'error': 'Cycle ID (pk) is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         cycle = get_object_or_404(MessCycle, pk=pk, mess=mess)
-
         serializer = CreateMessCycleSerializer(cycle, data=request.data, partial=True, context={'mess': mess})
         if serializer.is_valid():
             serializer.save()
+            notify_mess(mess, request.user, 'cycle_updated', {
+                'cycle_id': cycle.id,
+                'cycle_name': cycle.name,
+                'changed_fields': list(request.data.keys()),
+                'by': request.user.email,
+            })
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -151,21 +158,28 @@ class MemberDepositViewSet(APIView):
         serializer = MemberDepositCreateGetSerializer(data=request.data)
         if serializer.is_valid():
             member = serializer.validated_data['member']
-            target_mess_id = mess_id or member.mess_id
+            target_mess_id = int(mess_id) if mess_id else member.mess_id
 
-            if mess_id and member.mess_id != mess_id:
+            if mess_id and member.mess_id != int(mess_id):
                 return Response({'error': 'Selected member does not belong to this mess.'}, status=status.HTTP_400_BAD_REQUEST)
 
             mess_manager = Mess_Members.objects.filter(
                 member=request.user,
                 mess_id=target_mess_id,
-                is_manager=True
+                is_manager=True,
             ).first()
-
             if not mess_manager:
                 return Response({'error': 'You are not a manager of this mess.'}, status=status.HTTP_403_FORBIDDEN)
 
-            serializer.save(add_by=mess_manager)
+            deposit = serializer.save(add_by=mess_manager)
+            mess = mess_manager.mess
+            notify_mess(mess, request.user, 'deposit_added', {
+                'deposit_id': deposit.id,
+                'amount': str(deposit.amount),
+                'section': deposit.section,
+                'member_id': member.id,
+                'by': request.user.email,
+            })
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -191,7 +205,6 @@ class UpdateMemberDepositView(APIView):
             return Response({'error': 'mess_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         mess = get_object_or_404(Mess, pk=mess_id)
-
         pk = pk or request.query_params.get('id') or (
             request.data.get('id') if hasattr(request, 'data') and isinstance(request.data, dict) else None
         )
@@ -199,7 +212,6 @@ class UpdateMemberDepositView(APIView):
             return Response({'error': 'Deposit ID (pk) is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
         deposit = get_object_or_404(MemberDeposit, pk=pk, member__mess=mess)
-
         serializer = MemberDepositCreateGetSerializer(deposit, data=request.data, partial=True)
         if serializer.is_valid():
             if 'member' in serializer.validated_data:
@@ -208,8 +220,42 @@ class UpdateMemberDepositView(APIView):
                     return Response({'error': 'Selected member does not belong to this mess.'}, status=status.HTTP_400_BAD_REQUEST)
 
             serializer.save()
+            notify_mess(mess, request.user, 'deposit_updated', {
+                'deposit_id': deposit.id,
+                'changed_fields': list(request.data.keys()),
+                'by': request.user.email,
+            })
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @extend_schema(
+        tags=[TAG],
+        summary="Delete a member deposit",
+        responses={
+            204: None,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+    )
+    def delete(self, request, mess_id=None, pk=None):
+        mess_id = mess_id or request.query_params.get('mess_id')
+        if not mess_id:
+            return Response({'error': 'mess_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        mess = get_object_or_404(Mess, pk=mess_id)
+        pk = pk or request.query_params.get('id')
+        if not pk:
+            return Response({'error': 'Deposit ID (pk) is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        deposit = get_object_or_404(MemberDeposit, pk=pk, member__mess=mess)
+        notify_mess(mess, request.user, 'deposit_deleted', {
+            'deposit_id': deposit.id,
+            'amount': str(deposit.amount),
+            'section': deposit.section,
+            'by': request.user.email,
+        })
+        deposit.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # =====================================================================
@@ -256,15 +302,41 @@ class MessBazarViewSet(APIView):
             member = serializer.validated_data.get('member')
             if member and member.mess_id != mess.id:
                 return Response({'error': 'Selected member does not belong to this mess.'}, status=status.HTTP_400_BAD_REQUEST)
-            serializer.save(mess=mess)
+            bazar = serializer.save(mess=mess)
+            notify_mess(mess, request.user, 'bazar_added', {
+                'bazar_id': bazar.id,
+                'product_name': bazar.product_name,
+                'product_price': str(bazar.product_price),
+                'by': request.user.email,
+            })
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class UpdateMessBazarView(APIView):
-    """Dedicated view for PATCH request only - updates an existing MessBazar item."""
+    """Dedicated view for PATCH/DELETE - updates or deletes an existing MessBazar item."""
     permission_classes = [IsAuthenticated, IsMessMember]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def _get_bazar(self, request, mess_id, pk):
+        """Shared lookup + ownership check. Returns (mess, bazar) or raises."""
+        mess_id = mess_id or request.query_params.get('mess_id')
+        if not mess_id:
+            return None, None, Response({'error': 'mess_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        mess = get_object_or_404(Mess, pk=mess_id)
+        pk = pk or request.query_params.get('id') or (
+            request.data.get('id') if hasattr(request, 'data') and isinstance(request.data, dict) else None
+        )
+        if not pk:
+            return None, None, Response({'error': 'Bazar ID (pk) is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        bazar = get_object_or_404(MessBazar, pk=pk, mess=mess)
+        is_manager = Mess_Members.objects.filter(member=request.user, mess=mess, is_manager=True).exists()
+        if not is_manager and bazar.member.member != request.user:
+            return None, None, Response({'error': 'You do not have permission to edit this bazar item.'}, status=status.HTTP_403_FORBIDDEN)
+
+        return mess, bazar, None
 
     @extend_schema(
         tags=[TAG],
@@ -278,37 +350,52 @@ class UpdateMessBazarView(APIView):
         },
     )
     def patch(self, request, mess_id=None, pk=None):
-        mess_id = mess_id or request.query_params.get('mess_id')
-        if not mess_id:
-            return Response({'error': 'mess_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        mess = get_object_or_404(Mess, pk=mess_id)
-
-        pk = pk or request.query_params.get('id') or (
-            request.data.get('id') if hasattr(request, 'data') and isinstance(request.data, dict) else None
-        )
-        if not pk:
-            return Response({'error': 'Bazar ID (pk) is required.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        bazar = get_object_or_404(MessBazar, pk=pk, mess=mess)
-
-        # Allow if requester is manager OR is the member who created the bazar entry
-        is_manager = Mess_Members.objects.filter(member=request.user, mess=mess, is_manager=True).exists()
-        if not is_manager and bazar.member.member != request.user:
-            return Response({'error': 'You do not have permission to edit this bazar item.'}, status=status.HTTP_403_FORBIDDEN)
+        mess, bazar, err = self._get_bazar(request, mess_id, pk)
+        if err:
+            return err
 
         serializer = MessBazarSerializer(bazar, data=request.data, partial=True)
         if serializer.is_valid():
             if 'member' in serializer.validated_data:
-                new_member = serializer.validated_data['member']
-                if new_member.mess_id != mess.id:
+                if serializer.validated_data['member'].mess_id != mess.id:
                     return Response({'error': 'Selected member does not belong to this mess.'}, status=status.HTTP_400_BAD_REQUEST)
-
             serializer.save()
+            notify_mess(mess, request.user, 'bazar_updated', {
+                'bazar_id': bazar.id,
+                'product_name': bazar.product_name,
+                'changed_fields': list(request.data.keys()),
+                'by': request.user.email,
+            })
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        tags=[TAG],
+        summary="Delete a mess bazar item",
+        responses={
+            204: None,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+    )
+    def delete(self, request, mess_id=None, pk=None):
+        mess, bazar, err = self._get_bazar(request, mess_id, pk)
+        if err:
+            return err
 
+        notify_mess(mess, request.user, 'bazar_deleted', {
+            'bazar_id': bazar.id,
+            'product_name': bazar.product_name,
+            'product_price': str(bazar.product_price),
+            'by': request.user.email,
+        })
+        bazar.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# =====================================================================
+# 4. Mess Utilities Views
+# =====================================================================
 
 class MessUtilitiesViewSet(APIView):
     permission_classes = [IsAuthenticated, IsMessMember]
@@ -326,7 +413,7 @@ class MessUtilitiesViewSet(APIView):
         mess_id = mess_id or request.query_params.get('mess_id')
         if not mess_id:
             return Response({'error': 'mess_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        utilities = MessUtilities.objects.filter(mess_id=mess_id).order_by('-created_at')
+        utilities = MessUtilities.objects.filter(mess_id=mess_id).order_by('-utility_date')
         serializer = MessUtilitiesSerializer(utilities, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -347,13 +434,39 @@ class MessUtilitiesViewSet(APIView):
         mess = get_object_or_404(Mess, pk=mess_id)
         serializer = MessUtilitiesSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(mess=mess)
+            utility = serializer.save(mess=mess)
+            notify_mess(mess, request.user, 'utility_added', {
+                'utility_id': utility.id,
+                'utility_name': utility.utility_name,
+                'utility_cost': str(utility.utility_cost),
+                'by': request.user.email,
+            })
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 
 class UpdateMessUtilitiesView(APIView):
     permission_classes = [IsAuthenticated, IsMessMember]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def _get_utility(self, request, mess_id, pk):
+        mess_id = mess_id or request.query_params.get('mess_id')
+        if not mess_id:
+            return None, None, Response({'error': 'mess_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        mess = get_object_or_404(Mess, pk=mess_id)
+        pk = pk or request.query_params.get('id') or (
+            request.data.get('id') if hasattr(request, 'data') and isinstance(request.data, dict) else None
+        )
+        if not pk:
+            return None, None, Response({'error': 'Utilities ID (pk) is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        utility = get_object_or_404(MessUtilities, pk=pk, mess=mess)
+        is_manager = Mess_Members.objects.filter(member=request.user, mess=mess, is_manager=True).exists()
+        if not is_manager:
+            return None, None, Response({'error': 'You do not have permission to edit this utility item.'}, status=status.HTTP_403_FORBIDDEN)
+
+        return mess, utility, None
 
     @extend_schema(
         tags=[TAG],
@@ -367,30 +480,49 @@ class UpdateMessUtilitiesView(APIView):
         },
     )
     def patch(self, request, mess_id=None, pk=None):
-        mess_id = mess_id or request.query_params.get('mess_id')
-        if not mess_id:
-            return Response({'error': 'mess_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        mess = get_object_or_404(Mess, pk=mess_id)
-
-        pk = pk or request.query_params.get('id') or (
-            request.data.get('id') if hasattr(request, 'data') and isinstance(request.data, dict) else None
-        )
-        if not pk:
-            return Response({'error': 'Utilities ID (pk) is required.'}, status=status.HTTP_400_BAD_REQUEST)
-
-        utility = get_object_or_404(MessUtilities, pk=pk, mess=mess)
-
-        is_manager = Mess_Members.objects.filter(member=request.user, mess=mess, is_manager=True).exists()
-        if not is_manager and utility.member.member != request.user:
-            return Response({'error': 'You do not have permission to edit this utility item.'}, status=status.HTTP_403_FORBIDDEN)
+        mess, utility, err = self._get_utility(request, mess_id, pk)
+        if err:
+            return err
 
         serializer = MessUtilitiesSerializer(utility, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            notify_mess(mess, request.user, 'utility_updated', {
+                'utility_id': utility.id,
+                'utility_name': utility.utility_name,
+                'changed_fields': list(request.data.keys()),
+                'by': request.user.email,
+            })
             return Response(serializer.data, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @extend_schema(
+        tags=[TAG],
+        summary="Delete a mess utilities item",
+        responses={
+            204: None,
+            403: OpenApiTypes.OBJECT,
+            404: OpenApiTypes.OBJECT,
+        },
+    )
+    def delete(self, request, mess_id=None, pk=None):
+        mess, utility, err = self._get_utility(request, mess_id, pk)
+        if err:
+            return err
+
+        notify_mess(mess, request.user, 'utility_deleted', {
+            'utility_id': utility.id,
+            'utility_name': utility.utility_name,
+            'utility_cost': str(utility.utility_cost),
+            'by': request.user.email,
+        })
+        utility.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# =====================================================================
+# 5. Cycle Financial Summary
+# =====================================================================
 
 class MessCycleFinancialSummaryView(APIView):
     permission_classes = [IsAuthenticated, IsMessMember]

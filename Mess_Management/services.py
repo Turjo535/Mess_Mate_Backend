@@ -37,6 +37,18 @@ def notify_managers(mess, type_, email, user_id=None):
         for uid in _managers([mess.id]).get(mess.id, [])])
 
 
+def notify_all_members(mess, type_, payload, exclude_user=None):
+    """Send a notification to all members of a mess, optionally excluding one user."""
+    qs = Mess_Members.objects.filter(mess=mess)
+    if exclude_user is not None:
+        qs = qs.exclude(member=exclude_user)
+    user_ids = qs.values_list('member_id', flat=True)
+    Notification.objects.bulk_create([
+        Notification(user_id=uid, type=type_, payload=payload)
+        for uid in user_ids
+    ])
+
+
 @transaction.atomic
 def expire_invitations(qs):
     invs = list(qs.select_related('mess'))
@@ -129,9 +141,48 @@ def respond_to_invitation(invitation_id, user, new_status):
             raise ValidationError('Mess is full.')
         if not Mess_Members.objects.filter(member=user, mess=inv.mess).exists():
             Mess_Members.objects.create(member=user, mess=inv.mess)
+            notify_all_members(
+                inv.mess,
+                'member_joined',
+                {
+                    'mess_id': inv.mess.id,
+                    'mess_name': inv.mess.name,
+                    'email': user.email,
+                    'user_id': user.id,
+                    'name': getattr(user, 'name', None) or user.email,
+                },
+                exclude_user=user,
+            )
 
     notify_managers(inv.mess, f'invitation_{new_status}', user.email, user.id)
     Notification.objects.filter(user=user, type='mess_invitation',
                                 payload__invitation_id=inv.id).delete()
     inv.delete()
     return new_status
+
+
+@transaction.atomic
+def leave_mess(mess, user):
+    membership = Mess_Members.objects.select_for_update().filter(mess=mess, member=user).first()
+    if not membership:
+        raise NotFound('You are not a member of this mess.')
+
+    other_members = Mess_Members.objects.filter(mess=mess).exclude(member=user)
+    if membership.is_manager and other_members.exists():
+        has_other_manager = other_members.filter(is_manager=True).exists()
+        if not has_other_manager:
+            raise ValidationError('You are the only manager. Please assign another manager before leaving.')
+
+    membership.delete()
+    notify_all_members(
+        mess,
+        'member_left',
+        {
+            'mess_id': mess.id,
+            'mess_name': mess.name,
+            'email': user.email,
+            'user_id': user.id,
+            'name': getattr(user, 'name', None) or user.email,
+        },
+        exclude_user=user,
+    )

@@ -8,7 +8,8 @@ urlpatterns = [
     path('invitations/', v.MyInvitationListView.as_view()),
     path('invitations/lookup/', v.InvitationLookupView.as_view()),
     path('invitations/<int:pk>/', v.InvitationRespondView.as_view()),
-    path('switch-manager/', v.SwitchManagerView.as_view()),
+    path('<int:mess_id>/switch-manager/', v.SwitchMessManagerView.as_view()),
+    path('<int:mess_id>/leave/', v.LeaveMessView.as_view()),
     path('notifications/', v.NotificationListView.as_view()),
     path('notifications/<int:pk>/', v.NotificationReadView.as_view()),
 ]
